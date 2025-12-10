@@ -1,9 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { supabase } from "@/lib/supabase" // On importe notre connexion
+import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input" // On utilisera des inputs simples HTML si tu n'as pas ce composant
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
@@ -31,7 +31,7 @@ export default function LoginPage() {
         if (error) throw error
         toast({
           title: "Inscription réussie !",
-          description: "Vérifiez vos emails pour confirmer votre compte.",
+          description: "Vérifiez vos emails pour confirmer votre compte (si activé).",
         })
       } else {
         // --- CONNEXION ---
@@ -45,6 +45,11 @@ export default function LoginPage() {
           title: "Connexion réussie",
           description: "Redirection vers le dashboard...",
         })
+
+        // 👇 LA LIGNE MAGIQUE POUR DÉBLOQUER LA REDIRECTION 👇
+        router.refresh() 
+        // 👆 Force le serveur à vérifier les cookies immédiatement
+        
         router.push("/dashboard")
       }
     } catch (error: any) {
@@ -73,10 +78,9 @@ export default function LoginPage() {
           <form onSubmit={handleAuth} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Email</label>
-              <input
+              <Input
                 type="email"
                 placeholder="nom@exemple.com"
-                className="flex h-10 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -84,10 +88,9 @@ export default function LoginPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Mot de passe</label>
-              <input
+              <Input
                 type="password"
                 placeholder="••••••••"
-                className="flex h-10 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
