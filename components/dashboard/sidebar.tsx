@@ -82,7 +82,7 @@ export function Sidebar() {
       {/* Bas de page (Support + Déconnexion) */}
       <div className="border-t p-4 space-y-2">
         <Button variant="ghost" className="w-full justify-start gap-2 text-gray-500" asChild>
-          <Link href="mailto:support@reputationflow.com">
+          <Link href="mailto:charmassonnoe@gmail.com">
             <LifeBuoy className="h-4 w-4" />
             Support
           </Link>
