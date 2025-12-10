@@ -1,14 +1,24 @@
-"use client" // <--- 1. INDISPENSABLE pour que le menu mobile marche
+"use client"
 
-import { useState } from "react" // <--- 2. On importe la mémoire du bouton
+import { useState, useEffect } from "react" // <--- 1. On importe useEffect
 import { Button } from "@/components/ui/button"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { CheckCircle2, Sparkles, MessageSquare, Star, ArrowRight, Menu, X } from "lucide-react"
+import { CheckCircle2, Sparkles, MessageSquare, Star, ArrowRight, Menu, X, User } from "lucide-react"
 import Link from "next/link"
+import { supabase } from "@/lib/supabase" // <--- 2. On importe Supabase
 
 export default function Home() {
-  // 3. Cette variable retient si le menu est ouvert ou fermé
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [user, setUser] = useState<any>(null) // <--- 3. On crée une mémoire pour l'utilisateur
+
+  // 4. Au chargement de la page, on vérifie si l'utilisateur est connecté
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setUser(user)
+    }
+    checkUser()
+  }, [])
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -22,24 +32,37 @@ export default function Home() {
             <span>ReputationFlow</span>
           </div>
           
-          {/* MENU DESKTOP (Caché sur mobile) */}
+          {/* MENU DESKTOP */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
             <Link href="#features" className="hover:text-indigo-600 transition">Fonctionnalités</Link>
             <Link href="#pricing" className="hover:text-indigo-600 transition">Tarifs</Link>
-            <Link href="#testimonials" className="hover:text-indigo-600 transition">Témoignages</Link>
+            <Link href="/demo" className="hover:text-indigo-600 transition">Démo</Link>
           </nav>
 
-          {/* BOUTONS DESKTOP (Cachés sur mobile) */}
+          {/* BOUTONS DESKTOP INTELLIGENTS */}
           <div className="hidden md:flex items-center gap-4">
-            <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-indigo-600">
-              Se connecter
-            </Link>
-            <Link href="/dashboard">
-              <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700">Essayer gratuitement</Button>
-            </Link>
+            {user ? (
+              // --- SI CONNECTÉ : Affiche "Mon Tableau de bord" ---
+              <Link href="/dashboard">
+                <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 gap-2">
+                  <User className="w-4 h-4" />
+                  Mon Tableau de bord
+                </Button>
+              </Link>
+            ) : (
+              // --- SI PAS CONNECTÉ : Affiche "Se connecter" ---
+              <>
+                <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-indigo-600">
+                  Se connecter
+                </Link>
+                <Link href="/dashboard">
+                  <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700">Essayer gratuitement</Button>
+                </Link>
+              </>
+            )}
           </div>
 
-          {/* BOUTON HAMBURGER (Visible UNIQUEMENT sur mobile) */}
+          {/* BOUTON HAMBURGER MOBILE */}
           <button 
             className="md:hidden p-2 text-gray-600"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -48,35 +71,48 @@ export default function Home() {
           </button>
         </div>
 
-        {/* --- LE MENU MOBILE (S'affiche quand on clique) --- */}
+        {/* --- MENU MOBILE INTELLIGENT --- */}
         {isMobileMenuOpen && (
           <div className="md:hidden border-b bg-white absolute w-full left-0 top-16 shadow-xl p-4 flex flex-col gap-4 animate-in slide-in-from-top-5">
             <Link 
               href="#features" 
-              className="text-sm font-medium text-gray-600 py-2 hover:text-indigo-600"
-              onClick={() => setIsMobileMenuOpen(false)} // Ferme le menu au clic
+              className="text-sm font-medium text-gray-600 py-2"
+              onClick={() => setIsMobileMenuOpen(false)}
             >
               Fonctionnalités
             </Link>
             <Link 
               href="#pricing" 
-              className="text-sm font-medium text-gray-600 py-2 hover:text-indigo-600"
+              className="text-sm font-medium text-gray-600 py-2"
               onClick={() => setIsMobileMenuOpen(false)}
             >
               Tarifs
             </Link>
-            <Link 
-              href="/login" 
-              className="text-sm font-medium text-indigo-600 py-2 font-bold"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              Se connecter
-            </Link>
-            <Link href="/dashboard" onClick={() => setIsMobileMenuOpen(false)}>
-              <Button className="w-full bg-indigo-600 hover:bg-indigo-700">
-                Essayer gratuitement
-              </Button>
-            </Link>
+
+            {user ? (
+              // MOBILE CONNECTÉ
+              <Link href="/dashboard" onClick={() => setIsMobileMenuOpen(false)}>
+                <Button className="w-full bg-indigo-600 gap-2">
+                  <User className="w-4 h-4" /> Accéder à mon espace
+                </Button>
+              </Link>
+            ) : (
+              // MOBILE NON CONNECTÉ
+              <>
+                <Link 
+                  href="/login" 
+                  className="text-sm font-medium text-indigo-600 py-2 font-bold"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  Se connecter
+                </Link>
+                <Link href="/dashboard" onClick={() => setIsMobileMenuOpen(false)}>
+                  <Button className="w-full bg-indigo-600">
+                    Essayer gratuitement
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         )}
       </header>
@@ -85,7 +121,6 @@ export default function Home() {
         {/* Hero Section */}
         <section className="relative overflow-hidden bg-gradient-to-b from-indigo-50 to-white pt-20 pb-32">
           <div className="container mx-auto px-4 text-center relative z-10">
-            {/* Badge */}
             <div className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-800 mb-8">
               <Sparkles className="mr-2 h-4 w-4" />
               <span>Nouveau : Intégration GPT-4 Turbo</span>
@@ -103,14 +138,15 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 px-4">
               <Link href="/dashboard" className="w-full sm:w-auto">
                 <Button size="lg" className="text-lg px-8 py-6 h-auto w-full shadow-xl shadow-indigo-200 bg-indigo-600 hover:bg-indigo-700">
-                  Commencer <ArrowRight className="ml-2 h-5 w-5" />
+                  {user ? "Aller au Dashboard" : "Commencer maintenant"} <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
-              <Link href="/demo">
-              <Button variant="outline" size="lg" className="text-lg px-8 py-6 h-auto w-full sm:w-auto">
-                Voir la démo
+              
+              <Link href="/demo" className="w-full sm:w-auto">
+                <Button variant="outline" size="lg" className="text-lg px-8 py-6 h-auto w-full">
+                  Voir la démo
                 </Button>
-                </Link>
+              </Link>
             </div>
 
             {/* Note Social Proof */}
