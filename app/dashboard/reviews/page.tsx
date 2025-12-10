@@ -1,96 +1,142 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ReviewCard } from "@/components/dashboard/review-card"
-import { Review } from "@/lib/types"
-import { Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { supabase } from "@/lib/supabase"
+import { Loader2, Zap } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 
-// Données fictives locales (pour être sûr que ça marche)
-const INITIAL_REVIEWS: Review[] = [
-  {
-    id: "1",
-    customerName: "Sophie Martin",
-    rating: 5,
-    date: "Il y a 2 heures",
-    text: "Service incroyable ! J'ai adoré l'accueil et la rapidité du service.",
-    source: "Google",
-    responded: false
-  },
-  {
-    id: "2",
-    customerName: "Jean Dupont",
-    rating: 2,
-    date: "Il y a 1 jour",
-    text: "Assez déçu par l'expérience. L'attente était interminable.",
-    source: "Google",
-    responded: false
-  },
-  {
-    id: "3",
-    customerName: "Marie Curry",
-    rating: 4,
-    date: "Il y a 3 jours",
-    text: "Très bon moment passé en famille. Un peu bruyant mais top.",
-    source: "Tripadvisor",
-    responded: true,
-    response: "Merci Marie ! Nous prenons note pour le bruit."
-  }
-]
+type DBReview = {
+  id: string
+  author_name: string
+  rating: number
+  text: string
+  date: string
+  source: string
+  status: string
+  reply_text?: string
+}
 
 export default function ReviewsPage() {
-  const [reviews, setReviews] = useState<Review[]>(INITIAL_REVIEWS)
+  const [reviews, setReviews] = useState<DBReview[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
 
-  const handleGenerateResponse = async (reviewId: string) => {
-    // 1. Délai artificiel pour simuler l'IA
-    await new Promise(resolve => setTimeout(resolve, 1500))
-
-    // 2. Trouver l'avis
-    const reviewToAnswer = reviews.find(r => r.id === reviewId)
-    if (!reviewToAnswer) return
-
-    // 3. Choisir une réponse
-    let fakeAIResponse = ""
-    if (reviewToAnswer.rating >= 4) {
-      fakeAIResponse = `Bonjour ${reviewToAnswer.customerName}, merci beaucoup pour cette superbe note ! ⭐ Nous sommes ravis que l'expérience vous ait plu.`
-    } else {
-      fakeAIResponse = `Bonjour ${reviewToAnswer.customerName}, nous sommes désolés d'apprendre que votre expérience n'a pas été à la hauteur. Nous allons faire mieux la prochaine fois.`
+  // Charger les avis depuis Supabase
+  const fetchReviews = async () => {
+    setIsLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (user) {
+      const { data } = await supabase
+        .from('reviews')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (data) setReviews(data)
     }
+    setIsLoading(false)
+  }
 
-    // 4. Mettre à jour l'état (C'est cette partie qui fait apparaître le texte)
-    setReviews(prevReviews => 
-      prevReviews.map(review => 
-        review.id === reviewId 
-          ? { ...review, response: fakeAIResponse } 
-          : review
-      )
-    )
+  useEffect(() => {
+    fetchReviews()
+  }, [])
+
+  // 🔥 LA FONCTION DE CONNEXION GOOGLE 🔥
+  const handleConnectGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        // C'est ici qu'on demande la permission de gérer le Business Profile
+        scopes: 'https://www.googleapis.com/auth/business.manage',
+        redirectTo: `${window.location.origin}/dashboard/reviews`, // Revenir ici après
+        queryParams: {
+          access_type: 'offline', // Important pour garder la connexion active
+          prompt: 'consent', // Force l'écran de validation pour être sûr d'avoir les droits
+        },
+      },
+    })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erreur", description: error.message })
+    }
+  }
+
+  // Fonction IA (inchangée pour l'instant)
+  const handleGenerateResponse = async (reviewId: string) => {
+    const review = reviews.find(r => r.id === reviewId)
+    if (!review) return
+
+    let aiResponse = ""
+    if (review.rating >= 4) aiResponse = `Merci ${review.author_name} ! ⭐`
+    else aiResponse = `Bonjour ${review.author_name}, désolé pour ce problème.`
+
+    const { error } = await supabase
+      .from('reviews')
+      .update({ status: 'replied', reply_text: aiResponse })
+      .eq('id', reviewId)
+
+    if (!error) {
+      setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, status: 'replied', reply_text: aiResponse } : r))
+    }
   }
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-10">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-gray-900">Vos Avis</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-gray-900">Vos Avis Google</h2>
           <p className="text-gray-500">
-            Gérez et répondez à vos avis clients centralisés.
+            Connectez votre fiche pour voir vos vrais avis.
           </p>
         </div>
-        <Button variant="outline" className="gap-2">
-            <Filter className="w-4 h-4" />
-            Filtrer
+        
+        {/* LE BOUTON DE CONNEXION RÉEL */}
+        <Button 
+          onClick={handleConnectGoogle} 
+          className="gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200"
+        >
+            <Zap className="w-4 h-4 fill-current" />
+            Connecter Google Business
         </Button>
       </div>
 
-      <div className="grid gap-6">
-        {reviews.map((review) => (
-          <ReviewCard 
-            key={review.id} 
-            review={review} 
-            onGenerateResponse={handleGenerateResponse}
-          />
-        ))}
-      </div>
+      {isLoading ? (
+        <div className="flex justify-center py-10"><Loader2 className="animate-spin text-indigo-600" /></div>
+      ) : reviews.length === 0 ? (
+        <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+          <div className="bg-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border">
+            <span className="text-2xl">📍</span>
+          </div>
+          <h3 className="text-lg font-medium text-gray-900">Aucun avis connecté</h3>
+          <p className="text-gray-500 mb-6 max-w-sm mx-auto mt-2">
+            Cliquez sur le bouton bleu en haut pour autoriser ReputationFlow à lire vos avis Google.
+          </p>
+          <Button onClick={handleConnectGoogle} variant="outline">
+            Lancer la connexion
+          </Button>
+        </div>
+      ) : (
+        <div className="grid gap-6">
+          {reviews.map((review) => (
+            <ReviewCard 
+              key={review.id} 
+              review={{
+                id: review.id,
+                customerName: review.author_name,
+                rating: review.rating,
+                text: review.text,
+                date: review.date,
+                source: "Google",
+                responded: review.status === 'replied',
+                response: review.reply_text
+              }} 
+              onGenerateResponse={handleGenerateResponse}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
