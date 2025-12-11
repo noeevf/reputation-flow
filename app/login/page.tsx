@@ -17,18 +17,17 @@ export default function LoginPage() {
   const router = useRouter()
   const { toast } = useToast()
 
-  // 🕵️‍♂️ L'ESPION : Il surveille si Supabase valide la connexion
+  // ESPION : Si on arrive sur cette page et qu'on est DÉJÀ connecté, on redirige
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session) {
-        // Dès qu'on est connecté, on force le passage vers le dashboard
-        router.refresh()
-        router.push("/dashboard")
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        // Redirection forcée si déjà connecté
+        window.location.href = "/dashboard"
       }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [router])
+    }
+    checkUser()
+  }, [])
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,7 +45,7 @@ export default function LoginPage() {
           title: "Inscription réussie !",
           description: "Vérifiez vos emails (si activé) ou connectez-vous.",
         })
-        setIsLoading(false) // On arrête le chargement pour laisser l'utilisateur basculer sur connexion
+        setIsLoading(false) // On rend la main à l'utilisateur
       } else {
         // --- CONNEXION ---
         const { error } = await supabase.auth.signInWithPassword({
@@ -56,10 +55,15 @@ export default function LoginPage() {
         if (error) throw error
         
         toast({
-          title: "Connexion en cours...",
-          description: "Nous vous redirigeons.",
+          title: "Connexion réussie",
+          description: "Redirection en cours...",
         })
-        // Note : On ne fait pas de redirection ici, c'est l'Espion (useEffect) plus haut qui va le faire automatiquement
+
+        // 🚨 LA CORRECTION EST ICI 🚨
+        // On ne demande pas poliment à Next.js, on force le navigateur
+        // à recharger toute la page vers le dashboard.
+        // Cela résout le bug du chargement infini.
+        window.location.href = "/dashboard"
       }
     } catch (error: any) {
       toast({
