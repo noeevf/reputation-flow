@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase"
 import { Loader2, Zap, RefreshCcw, Database } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
+// Le type exact de tes données dans Supabase
 type DBReview = {
   id: string
   author_name: string
@@ -14,7 +15,7 @@ type DBReview = {
   text: string
   date: string
   source: string
-  status: string
+  status: string       // 'pending', 'draft', 'replied'
   reply_text?: string
 }
 
@@ -26,6 +27,7 @@ export default function ReviewsPage() {
   
   const { toast } = useToast()
 
+  // 1. CHARGEMENT DES DONNÉES
   const fetchReviews = async () => {
     setIsLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -45,7 +47,7 @@ export default function ReviewsPage() {
     fetchReviews()
   }, [])
 
-  // --- LOGIQUE IA : GÉNÉRATION (Brouillon) ---
+  // 2. GÉNÉRATION IA (CRÉATION DU BROUILLON)
   const handleGenerateResponse = async (reviewId: string) => {
     setGeneratingId(reviewId)
     try {
@@ -55,6 +57,7 @@ export default function ReviewsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("Non connecté")
 
+      // Appel à l'API IA
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -69,7 +72,7 @@ export default function ReviewsPage() {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
 
-      // IMPORTANT : On sauvegarde en statut 'draft' (Brouillon)
+      // Sauvegarde en tant que BROUILLON ('draft')
       const { error } = await supabase
         .from('reviews')
         .update({ status: 'draft', reply_text: data.reply })
@@ -77,21 +80,22 @@ export default function ReviewsPage() {
 
       if (error) throw error
 
+      // Mise à jour locale
       setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, status: 'draft', reply_text: data.reply } : r))
       
-      toast({ title: "Brouillon prêt 📝", description: "Vous pouvez maintenant relire et valider la réponse." })
+      toast({ title: "Brouillon prêt 📝", description: "Relisez et validez la réponse." })
 
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Erreur", description: error.message })
+      toast({ variant: "destructive", title: "Erreur IA", description: error.message })
     } finally {
       setGeneratingId(null)
     }
   }
 
-  // --- LOGIQUE VALIDATION : PUBLICATION ---
+  // 3. PUBLICATION (VALIDATION FINALE)
   const handlePublishResponse = async (reviewId: string, finalText: string) => {
     try {
-      // 1. On met à jour le statut en 'replied' avec le texte final modifié par l'utilisateur
+      // On passe le statut en 'replied' (Publié)
       const { error } = await supabase
         .from('reviews')
         .update({ status: 'replied', reply_text: finalText })
@@ -99,42 +103,70 @@ export default function ReviewsPage() {
 
       if (error) throw error
 
-      // 2. Mise à jour visuelle
       setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, status: 'replied', reply_text: finalText } : r))
 
       toast({ 
-        title: "Publié ! ✅", 
-        description: "La réponse a été enregistrée (Simulation d'envoi Google)." 
+        title: "Réponse publiée ! ✅", 
+        description: "Votre réponse a été envoyée." 
       })
 
-      // (Note: C'est ici qu'on ajouterait plus tard l'appel à l'API Google pour poster la réponse pour de vrai)
-
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Erreur sauvegarde", description: error.message })
+      toast({ variant: "destructive", title: "Erreur", description: error.message })
     }
   }
 
-  // --- (Le reste : Sync Google & Mode Démo inchangés) ---
-  const syncWithGoogle = async () => { /* ... code existant ... */ }
-  const handleConnectGoogle = async () => { /* ... code existant ... */ }
-  
+  // --- FONCTIONS SECONDAIRES (Sync, Démo, Auth) ---
+  const syncWithGoogle = async () => {
+    setIsSyncing(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session || !session.provider_token) {
+        toast({ title: "Connexion requise", description: "Cliquez sur l'éclair bleu." })
+        await handleConnectGoogle()
+        return
+      }
+      const response = await fetch('/api/sync-google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: session.provider_token, userId: session.user.id })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error)
+      toast({ title: "Succès !", description: `${result.count} avis synchronisés.` })
+      fetchReviews()
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Info", description: "Utilisez le mode démo si pas de fiche Google." })
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  const handleConnectGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        scopes: 'https://www.googleapis.com/auth/business.manage',
+        redirectTo: `${window.location.origin}/dashboard/reviews`,
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
+    })
+    if (error) toast({ variant: "destructive", title: "Erreur", description: error.message })
+  }
+
   const simulateData = async () => {
     setIsSyncing(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const fakeReviews = [
-      {
-        user_id: user.id, google_review_id: `fake-${Date.now()}-1`, author_name: "Julie Martin", rating: 5, text: "Top service !", date: new Date().toISOString(), source: "Google", status: "pending"
-      },
-      {
-        user_id: user.id, google_review_id: `fake-${Date.now()}-2`, author_name: "Paul B.", rating: 3, text: "Moyen...", date: new Date().toISOString(), source: "Google", status: "pending"
-      }
+      { user_id: user.id, google_review_id: `fake-${Date.now()}-1`, author_name: "Julie Martin", rating: 5, text: "Service impeccable !", date: new Date().toISOString(), source: "Google", status: "pending" },
+      { user_id: user.id, google_review_id: `fake-${Date.now()}-2`, author_name: "Marc Dubreuil", rating: 3, text: "Attente un peu longue.", date: new Date().toISOString(), source: "Google", status: "pending" }
     ]
     const { error } = await supabase.from('reviews').upsert(fakeReviews, { onConflict: 'google_review_id' })
     if (!error) { toast({ title: "Mode Démo", description: "Avis ajoutés" }); fetchReviews() }
     setIsSyncing(false)
   }
 
+  // --- RENDER ---
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-10">
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -142,14 +174,28 @@ export default function ReviewsPage() {
           <h2 className="text-2xl font-bold tracking-tight text-gray-900">Vos Avis Google</h2>
           <p className="text-gray-500">Gérez, modifiez et publiez vos réponses.</p>
         </div>
-        <div className="flex gap-2">
-            <Button onClick={simulateData} variant="outline" className="gap-2 border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"><Database className="w-4 h-4" /> Mode Démo</Button>
-            <Button onClick={() => window.location.reload()} variant="ghost" size="icon"><RefreshCcw className="w-4 h-4" /></Button>
+        <div className="flex flex-wrap gap-2 justify-center">
+            <Button onClick={simulateData} variant="outline" disabled={isSyncing} className="gap-2 border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100">
+                <Database className="w-4 h-4" /> Mode Démo
+            </Button>
+            <Button onClick={syncWithGoogle} disabled={isSyncing} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white">
+                {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />} Synchroniser
+            </Button>
+            <Button onClick={handleConnectGoogle} variant="outline" size="icon" title="Reconnecter Google">
+                <Zap className="w-4 h-4 text-blue-600" />
+            </Button>
         </div>
       </div>
 
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="animate-spin text-indigo-600" /></div>
+      ) : reviews.length === 0 ? (
+        <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+          <div className="bg-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border"><span className="text-2xl">🤖</span></div>
+          <h3 className="text-lg font-medium text-gray-900">Aucun avis</h3>
+          <p className="text-gray-500 mb-6 max-w-sm mx-auto mt-2">Cliquez sur "Mode Démo" pour tester l'IA.</p>
+          <Button onClick={simulateData} variant="outline" className="text-orange-600 border-orange-200">Lancer la démo</Button>
+        </div>
       ) : (
         <div className="grid gap-6">
           {reviews.map((review) => (
@@ -157,16 +203,16 @@ export default function ReviewsPage() {
               key={review.id} 
               review={{
                 id: review.id,
-                customerName: review.author_name,
+                customerName: review.author_name, // Mapping correct
                 rating: review.rating,
                 text: review.text,
                 date: new Date(review.date).toLocaleDateString(),
                 source: "Google",
-                status: review.status,
-                reply_text: review.reply_text
+                status: review.status,       // ✅ INDISPENSABLE
+                reply_text: review.reply_text // ✅ INDISPENSABLE
               }} 
               onGenerateResponse={handleGenerateResponse}
-              onPublishResponse={handlePublishResponse} // <-- Nouvelle fonction passée ici
+              onPublishResponse={handlePublishResponse}
               isGenerating={generatingId === review.id}
             />
           ))}
