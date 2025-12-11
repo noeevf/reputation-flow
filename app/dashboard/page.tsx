@@ -1,144 +1,196 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { MessageSquare, Star, TrendingUp, Clock, ArrowRight } from "lucide-react"
+import { Users, MessageSquare, Star, TrendingUp, ArrowRight } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
 export default function DashboardPage() {
-  return (
-    <div className="space-y-8">
+  const [stats, setStats] = useState({
+    totalReviews: 0,
+    averageRating: 0,
+    pendingReviews: 0,
+    repliedCount: 0
+  })
+  const [recentReviews, setRecentReviews] = useState<any[]>([])
+  const [userName, setUserName] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
       
-      {/* En-tête */}
+      if (user) {
+        // 1. On récupère le prénom depuis l'email (ex: "Jean" pour jean@gmail.com)
+        const name = user.email?.split('@')[0] || "Client"
+        setUserName(name.charAt(0).toUpperCase() + name.slice(1))
+
+        // 2. On récupère TOUS les avis pour faire les maths
+        const { data: reviews } = await supabase
+          .from('reviews')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (reviews && reviews.length > 0) {
+          // --- CALCULS DES STATISTIQUES ---
+          const total = reviews.length
+          // Somme des étoiles
+          const totalStars = reviews.reduce((acc, review) => acc + review.rating, 0)
+          // Moyenne (avec 1 chiffre après la virgule)
+          const average = (totalStars / total).toFixed(1)
+          
+          const pending = reviews.filter(r => r.status === 'pending').length
+          const replied = reviews.filter(r => r.status === 'replied').length
+
+          setStats({
+            totalReviews: total,
+            averageRating: Number(average),
+            pendingReviews: pending,
+            repliedCount: replied
+          })
+
+          // On garde juste les 3 plus récents pour l'affichage
+          setRecentReviews(reviews.slice(0, 3))
+        }
+      }
+      setIsLoading(false)
+    }
+
+    fetchData()
+  }, [])
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900">Tableau de bord</h2>
-          <p className="text-gray-500 mt-1">
-            Bienvenue sur ReputationFlow. Voici ce qu'il se passe aujourd'hui.
-          </p>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900">Bonjour, {userName} 👋</h2>
+          <p className="text-gray-500">Voici l'état de votre réputation en ligne.</p>
         </div>
-        <Link href="/dashboard/reviews">
-          <Button className="bg-indigo-600 hover:bg-indigo-700">
-            Gérer mes avis
-          </Button>
-        </Link>
+        <div className="hidden md:flex gap-2">
+            <Link href="/dashboard/reviews">
+                <Button>Gérer mes avis</Button>
+            </Link>
+        </div>
       </div>
 
-      {/* Statistiques (Cartes du haut) */}
+      {/* --- LES 4 CARTES DE STATS (VRAIES DONNÉES) --- */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         
-        {/* Carte 1 : Note Moyenne */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Note Moyenne</CardTitle>
-            <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">4.8/5</div>
-            <p className="text-xs text-green-600 flex items-center mt-1">
-              <TrendingUp className="h-3 w-3 mr-1" /> +0.2 ce mois-ci
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Carte 2 : Total Avis */}
+        {/* Carte 1 : Total Avis */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Avis</CardTitle>
-            <MessageSquare className="h-4 w-4 text-indigo-600" />
+            <MessageSquare className="h-4 w-4 text-gray-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,248</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              +12 cette semaine
-            </p>
+            <div className="text-2xl font-bold">{stats.totalReviews}</div>
+            <p className="text-xs text-gray-500">Avis synchronisés</p>
           </CardContent>
         </Card>
 
-        {/* Carte 3 : En attente */}
+        {/* Carte 2 : Note Moyenne */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">À traiter</CardTitle>
-            <Clock className="h-4 w-4 text-orange-500" />
+            <CardTitle className="text-sm font-medium">Note Moyenne</CardTitle>
+            <Star className={`h-4 w-4 ${stats.averageRating >= 4 ? "text-yellow-500 fill-yellow-500" : "text-gray-300"}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">3</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Nécessite une réponse
-            </p>
+            <div className="text-2xl font-bold">{stats.averageRating || "-"} / 5</div>
+            <p className="text-xs text-gray-500">Qualité globale</p>
           </CardContent>
         </Card>
 
-        {/* Carte 4 : Taux de réponse */}
+        {/* Carte 3 : À traiter */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Taux de réponse</CardTitle>
-            <TrendingUp className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium">À répondre</CardTitle>
+            <Users className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">98%</div>
-            <p className="text-xs text-green-600 mt-1">
-              Top 1% de votre secteur
-            </p>
+            <div className="text-2xl font-bold text-orange-600">{stats.pendingReviews}</div>
+            <p className="text-xs text-gray-500">Nécessite votre attention</p>
+          </CardContent>
+        </Card>
+
+        {/* Carte 4 : Réponses */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Réponses envoyées</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.repliedCount}</div>
+            <p className="text-xs text-gray-500">Traités via l'application</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Section : Derniers avis (Raccourci) */}
+      {/* --- SECTION BASSE --- */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4">
-          <CardHeader>
-            <CardTitle>Avis récents</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Avis fictif 1 */}
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
-                <div className="flex items-center gap-4">
-                  <div className="h-9 w-9 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold">S</div>
-                  <div>
-                    <p className="text-sm font-medium">Sophie Martin</p>
-                    <div className="flex text-yellow-400 text-xs">★★★★★</div>
-                  </div>
-                </div>
-                <div className="text-sm text-gray-500">Il y a 2h</div>
-              </div>
-
-              {/* Avis fictif 2 */}
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
-                <div className="flex items-center gap-4">
-                  <div className="h-9 w-9 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold">J</div>
-                  <div>
-                    <p className="text-sm font-medium">Jean Dupont</p>
-                    <div className="flex text-yellow-400 text-xs">★★☆☆☆</div>
-                  </div>
-                </div>
-                <div className="text-sm text-gray-500">Il y a 1j</div>
-              </div>
-
-              <Link href="/dashboard/reviews" className="block mt-4">
-                <Button variant="ghost" className="w-full text-indigo-600 hover:text-indigo-800">
-                  Voir tous les avis <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
+        
+        {/* GRAPHIQUE (Vide pour l'instant) */}
+        <Card className="col-span-4 bg-gray-50/50 border-dashed flex flex-col items-center justify-center min-h-[300px]">
+          <div className="p-6 text-center">
+            <TrendingUp className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+            <h3 className="font-semibold text-gray-900">Analyse d'évolution</h3>
+            <p className="text-sm text-gray-500 mb-4">Disponible bientôt : Graphique de vos étoiles mois par mois.</p>
+            <Button variant="outline" disabled>Bientôt disponible</Button>
+          </div>
         </Card>
 
-        {/* Section : Conseils ou Actions rapides */}
-        <Card className="col-span-3 bg-indigo-600 text-white border-none">
+        {/* DERNIERS AVIS (Vrais) */}
+        <Card className="col-span-3">
           <CardHeader>
-            <CardTitle className="text-white">Le conseil du jour</CardTitle>
+            <CardTitle>Derniers avis reçus</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-indigo-100 text-sm leading-relaxed mb-6">
-              Saviez-vous que répondre aux avis négatifs en moins de 24h augmente de 30% les chances qu'un client modifie sa note ?
-            </p>
-            <Link href="/dashboard/settings">
-              <Button variant="secondary" className="w-full font-bold text-indigo-700">
-                Configurer mes réponses auto
-              </Button>
-            </Link>
+            <div className="space-y-6">
+              {recentReviews.length === 0 ? (
+                <div className="text-center py-6">
+                    <p className="text-sm text-gray-500 mb-2">Aucune donnée.</p>
+                    <Link href="/dashboard/reviews">
+                        <Button variant="outline" size="sm">Générer des avis</Button>
+                    </Link>
+                </div>
+              ) : (
+                recentReviews.map((review) => (
+                  <div key={review.id} className="flex items-start gap-4 border-b pb-4 last:border-0 last:pb-0">
+                    {/* Avatar (Initiale) */}
+                    <span className="relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full bg-indigo-100 items-center justify-center font-bold text-indigo-700 uppercase">
+                      {review.author_name.charAt(0)}
+                    </span>
+                    
+                    <div className="space-y-1 w-full">
+                      <div className="flex justify-between items-center">
+                        <p className="text-sm font-medium leading-none truncate max-w-[120px]">{review.author_name}</p>
+                        <span className="text-yellow-500 text-xs font-bold tracking-widest flex">
+                          {"★".repeat(review.rating)}
+                          <span className="text-gray-200">{"★".repeat(5 - review.rating)}</span>
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 line-clamp-1 italic">
+                        "{review.text || "Pas de commentaire"}"
+                      </p>
+                      <p className="text-[10px] text-gray-400 pt-1">
+                        {new Date(review.date).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+              
+              {/* Lien Voir tout */}
+              {recentReviews.length > 0 && (
+                  <Link href="/dashboard/reviews" className="block pt-2">
+                    <Button variant="ghost" className="w-full text-xs text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50">
+                        Voir tous les avis <ArrowRight className="ml-1 w-3 h-3" />
+                    </Button>
+                  </Link>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
