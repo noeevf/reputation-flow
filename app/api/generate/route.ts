@@ -6,6 +6,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+// On crée un client Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -15,50 +16,59 @@ export async function POST(req: Request) {
   try {
     const { reviewText, rating, authorName, userId } = await req.json()
 
-    // Valeurs par défaut (si la base de données ne répond pas)
+    console.log("🔍 API appelée pour UserID:", userId)
+
     let userTone = "professionnel"
     let userSignature = "L'équipe"
 
-    // 1. Récupération des réglages
     if (userId) {
-      const { data: profile } = await supabase
+      // On essaie de lire le profil
+      const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
       
-      // Si on trouve un profil, on écrase les valeurs par défaut
+      if (error) {
+        console.error("❌ Erreur lecture profil Supabase:", error.message)
+      }
+
       if (profile) {
-        userTone = profile.tone || "professionnel"
-        userSignature = profile.signature || "L'équipe"
+        console.log("✅ Profil trouvé ! Ton:", profile.tone, "| Signature:", profile.signature)
+        // On force les valeurs si elles existent
+        if (profile.tone) userTone = profile.tone
+        if (profile.signature) userSignature = profile.signature
+      } else {
+        console.warn("⚠️ Profil introuvable pour cet ID.")
       }
     }
 
-    // 2. Création du Prompt (Consignes améliorées)
+    console.log("🤖 Génération avec le ton:", userTone)
+
     const prompt = `
       Tu es le gérant d'un établissement. Réponds à cet avis client.
 
-      INFOS AVIS :
+      CONTEXTE :
       - Client : ${authorName}
       - Note : ${rating}/5
-      - Commentaire : "${reviewText}"
+      - Avis : "${reviewText}"
 
-      CONSIGNES DE STYLE :
-      - Ton imposé : ${userTone}
-      - Langue : Français
-      - Longueur : Court (2-3 phrases max).
-      - IMPORTANT : Ne commence JAMAIS ta réponse par le nom du ton. Commence directement la phrase.
-
-      ${userTone === 'humoristique' ? 'RÈGLE SPÉCIALE HUMOUR : Fais une blague, sois décalé, utilise des emojis drôles. Ne sois surtout pas corporatif.' : ''}
+      ORDRES PRIORITAIRES :
+      1. Ton imposé : "${userTone.toUpperCase()}".
+      2. Langue : Français.
       
-      SIGNATURE :
-      Tu DOIS finir ta réponse uniquement par : "${userSignature}"
+      ${userTone === 'humoristique' ? 'RÈGLE HUMOUR : Fais une blague. Sois drôle. Ne sois pas coincé.' : ''}
+      ${userTone === 'amical' ? 'RÈGLE AMICALE : Tu peux tutoyer et utiliser des emojis sympas.' : ''}
+
+      SIGNATURE OBLIGATOIRE :
+      Finis ta réponse par : "${userSignature}"
+      (N'écris rien après la signature).
     `
 
     const completion = await openai.chat.completions.create({
       messages: [{ role: "user", content: prompt }],
       model: "gpt-3.5-turbo",
-      temperature: 0.9, // On augmente la créativité (0.7 -> 0.9) pour l'humour
+      temperature: 1.0, // Créativité maximale
     })
 
     const reply = completion.choices[0].message.content
@@ -66,7 +76,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ reply })
 
   } catch (error: any) {
-    console.error("Erreur API:", error)
-    return NextResponse.json({ error: "Erreur lors de la génération" }, { status: 500 })
+    console.error("🔥 Erreur critique API:", error)
+    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
 }
