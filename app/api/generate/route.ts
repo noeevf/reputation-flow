@@ -2,12 +2,10 @@ import { OpenAI } from "openai"
 import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 
-// On initialise OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-// On initialise Supabase (Côté Serveur)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -15,46 +13,47 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    // On récupère aussi le userId maintenant !
     const { reviewText, rating, authorName, userId } = await req.json()
 
-    // 1. Récupérer les réglages de l'utilisateur (Ton, Signature)
+    // Valeurs par défaut
     let userTone = "professionnel"
     let userSignature = ""
 
+    // 1. On va chercher les infos dans Supabase
     if (userId) {
-      const { data: profile } = await supabase
+      const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
       
       if (profile) {
+        console.log("✅ Profil trouvé :", profile.tone) // Pour le débogage
         userTone = profile.tone || "professionnel"
         userSignature = profile.signature || ""
+      } else {
+        console.log("❌ Aucun profil trouvé, utilisation du défaut.")
       }
     }
 
-    // 2. Construire le Prompt Dynamique
+    // 2. Le Prompt "Renforcé"
     const prompt = `
-      Tu es un expert en relation client.
-      Rédige une réponse à cet avis Google.
+      Tu es un assistant de réponse aux avis clients.
       
-      Détails de l'avis :
-      - Client : ${authorName}
-      - Note : ${rating}/5
-      - Commentaire : "${reviewText}"
+      CONTEXTE :
+      Client : ${authorName}
+      Note : ${rating}/5
+      Avis : "${reviewText}"
 
-      CONSIGNES DE PERSONNALITÉ (IMPORTANT) :
-      - Ton à adopter : ${userTone}
-      - Langue : Français
-      ${userSignature ? `- Termine obligatoirement la réponse par cette signature : "${userSignature}"` : ''}
+      ORDRES IMPÉRATIFS :
+      1. Adopte STRICTEMENT ce ton : "${userTone.toUpperCase()}".
+      2. Si le ton est "humoristique", tu DOIS faire une blague ou être décalé. Ne sois pas formel.
+      3. Si le ton est "amical", utilise le tutoiement si approprié.
+      4. Sois court (max 3 phrases).
       
-      Règles de rédaction :
-      - Sois concis et pertinent.
-      - Ne mets pas de guillemets autour de la réponse.
-      - Si la note est faible, sois désolé et constructif.
-      - Si la note est bonne, sois reconnaissant.
+      SIGNATURE OBLIGATOIRE :
+      Tu DOIS finir la réponse par : "${userSignature}"
+      (N'ajoute pas "Cordialement" ou autre avant la signature, mets juste la signature).
     `
 
     const completion = await openai.chat.completions.create({
