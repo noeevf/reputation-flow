@@ -22,11 +22,12 @@ export default function ReviewsPage() {
   const [reviews, setReviews] = useState<DBReview[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
-  // On ajoute un état pour savoir quel avis est en train d'être généré (pour afficher le petit rond qui tourne)
+  // État pour savoir quel avis est en train d'être généré
   const [generatingId, setGeneratingId] = useState<string | null>(null)
   
   const { toast } = useToast()
 
+  // Charger les avis depuis la BDD au démarrage
   const fetchReviews = async () => {
     setIsLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -46,7 +47,7 @@ export default function ReviewsPage() {
     fetchReviews()
   }, [])
 
-  // --- OPTION 1 : SYNCHRO GOOGLE ---
+  // --- OPTION 1 : SYNCHRO GOOGLE RÉELLE ---
   const syncWithGoogle = async () => {
     setIsSyncing(true)
     try {
@@ -80,6 +81,7 @@ export default function ReviewsPage() {
     }
   }
 
+  // Connexion OAuth Google
   const handleConnectGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -92,7 +94,7 @@ export default function ReviewsPage() {
     if (error) toast({ variant: "destructive", title: "Erreur", description: error.message })
   }
 
-  // --- OPTION 2 : SIMULATION ---
+  // --- OPTION 2 : SIMULATION (MODE DÉMO) ---
   const simulateData = async () => {
     setIsSyncing(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -118,6 +120,16 @@ export default function ReviewsPage() {
         date: new Date(Date.now() - 86400000).toISOString(),
         source: "Google",
         status: "pending"
+      },
+      {
+        user_id: user.id,
+        google_review_id: `fake-${Date.now()}-3`,
+        author_name: "Sophie Lefebvre",
+        rating: 4,
+        text: "Très bonne expérience globale, petit bémol sur le parking.",
+        date: new Date(Date.now() - 172800000).toISOString(),
+        source: "Google",
+        status: "pending"
       }
     ]
 
@@ -130,16 +142,19 @@ export default function ReviewsPage() {
     setIsSyncing(false)
   }
 
-  // 🔥 L'INTELLIGENCE ARTIFICIELLE EST ICI 🔥
+  // 🔥 INTELLIGENCE ARTIFICIELLE (Connectée aux préférences) 🔥
   const handleGenerateResponse = async (reviewId: string) => {
-    // 1. On active le chargement pour cet avis précis
     setGeneratingId(reviewId)
     
     try {
       const review = reviews.find(r => r.id === reviewId)
       if (!review) return
 
-      // 2. On appelle notre API (le cerveau)
+      // 1. On récupère l'utilisateur connecté pour ses préférences
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error("Utilisateur non connecté")
+
+      // 2. On appelle notre API en envoyant aussi le userId
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,6 +162,7 @@ export default function ReviewsPage() {
           reviewText: review.text,
           rating: review.rating,
           authorName: review.author_name,
+          userId: user.id, // <--- C'est ici que l'API saura quel ton utiliser
         }),
       })
 
@@ -155,7 +171,7 @@ export default function ReviewsPage() {
 
       const aiReply = data.reply
 
-      // 3. On sauvegarde la réponse de l'IA dans Supabase
+      // 3. On sauvegarde la réponse générée
       const { error } = await supabase
         .from('reviews')
         .update({ status: 'replied', reply_text: aiReply })
@@ -163,18 +179,18 @@ export default function ReviewsPage() {
 
       if (error) throw error
 
-      // 4. On met à jour l'affichage instantanément
+      // 4. Mise à jour de l'affichage
       setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, status: 'replied', reply_text: aiReply } : r))
       
       toast({ 
         title: "Réponse générée ! ✨", 
-        description: "L'IA a rédigé une réponse pour vous." 
+        description: "L'IA a respecté vos consignes de ton." 
       })
 
     } catch (error: any) {
       toast({ variant: "destructive", title: "Erreur IA", description: error.message })
     } finally {
-      setGeneratingId(null) // On arrête le chargement
+      setGeneratingId(null)
     }
   }
 
@@ -189,6 +205,7 @@ export default function ReviewsPage() {
         </div>
         
         <div className="flex flex-wrap gap-2 justify-center">
+            {/* BOUTON DÉMO */}
             <Button 
               onClick={simulateData} 
               variant="outline"
@@ -199,6 +216,7 @@ export default function ReviewsPage() {
                 Mode Démo
             </Button>
 
+            {/* BOUTON SYNCHRO */}
             <Button 
             onClick={syncWithGoogle} 
             disabled={isSyncing}
@@ -208,6 +226,7 @@ export default function ReviewsPage() {
                 Synchroniser
             </Button>
             
+            {/* BOUTON CONNEXION */}
             <Button onClick={handleConnectGoogle} variant="outline" size="icon" title="Reconnecter Google">
                 <Zap className="w-4 h-4 text-blue-600" />
             </Button>
@@ -223,7 +242,7 @@ export default function ReviewsPage() {
           </div>
           <h3 className="text-lg font-medium text-gray-900">Prêt à tester l'IA ?</h3>
           <p className="text-gray-500 mb-6 max-w-sm mx-auto mt-2">
-            Cliquez sur "Mode Démo" pour créer des avis, puis testez le bouton "Générer une réponse".
+            Configurez vos préférences dans "Paramètres", puis cliquez sur "Mode Démo".
           </p>
           <Button onClick={simulateData} variant="outline" className="text-orange-600 border-orange-200">
             Lancer la démo
@@ -245,7 +264,7 @@ export default function ReviewsPage() {
                 response: review.reply_text
               }} 
               onGenerateResponse={handleGenerateResponse}
-              isGenerating={generatingId === review.id} // On passe l'info si ça charge
+              isGenerating={generatingId === review.id}
             />
           ))}
         </div>
