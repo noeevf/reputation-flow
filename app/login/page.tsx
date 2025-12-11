@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,9 +13,22 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [isSignUp, setIsSignUp] = useState(false) // Pour basculer entre Connexion et Inscription
+  const [isSignUp, setIsSignUp] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
+
+  // 🕵️‍♂️ L'ESPION : Il surveille si Supabase valide la connexion
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        // Dès qu'on est connecté, on force le passage vers le dashboard
+        router.refresh()
+        router.push("/dashboard")
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [router])
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,8 +44,9 @@ export default function LoginPage() {
         if (error) throw error
         toast({
           title: "Inscription réussie !",
-          description: "Vérifiez vos emails pour confirmer votre compte (si activé).",
+          description: "Vérifiez vos emails (si activé) ou connectez-vous.",
         })
+        setIsLoading(false) // On arrête le chargement pour laisser l'utilisateur basculer sur connexion
       } else {
         // --- CONNEXION ---
         const { error } = await supabase.auth.signInWithPassword({
@@ -42,15 +56,10 @@ export default function LoginPage() {
         if (error) throw error
         
         toast({
-          title: "Connexion réussie",
-          description: "Redirection vers le dashboard...",
+          title: "Connexion en cours...",
+          description: "Nous vous redirigeons.",
         })
-
-        // 👇 LA LIGNE MAGIQUE POUR DÉBLOQUER LA REDIRECTION 👇
-        router.refresh() 
-        // 👆 Force le serveur à vérifier les cookies immédiatement
-        
-        router.push("/dashboard")
+        // Note : On ne fait pas de redirection ici, c'est l'Espion (useEffect) plus haut qui va le faire automatiquement
       }
     } catch (error: any) {
       toast({
@@ -58,7 +67,6 @@ export default function LoginPage() {
         title: "Erreur",
         description: error.message,
       })
-    } finally {
       setIsLoading(false)
     }
   }
