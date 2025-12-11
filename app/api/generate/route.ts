@@ -15,50 +15,50 @@ export async function POST(req: Request) {
   try {
     const { reviewText, rating, authorName, userId } = await req.json()
 
-    // Valeurs par défaut
+    // Valeurs par défaut (si la base de données ne répond pas)
     let userTone = "professionnel"
-    let userSignature = ""
+    let userSignature = "L'équipe"
 
-    // 1. On va chercher les infos dans Supabase
+    // 1. Récupération des réglages
     if (userId) {
-      const { data: profile, error } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
       
+      // Si on trouve un profil, on écrase les valeurs par défaut
       if (profile) {
-        console.log("✅ Profil trouvé :", profile.tone) // Pour le débogage
         userTone = profile.tone || "professionnel"
-        userSignature = profile.signature || ""
-      } else {
-        console.log("❌ Aucun profil trouvé, utilisation du défaut.")
+        userSignature = profile.signature || "L'équipe"
       }
     }
 
-    // 2. Le Prompt "Renforcé"
+    // 2. Création du Prompt (Consignes améliorées)
     const prompt = `
-      Tu es un assistant de réponse aux avis clients.
-      
-      CONTEXTE :
-      Client : ${authorName}
-      Note : ${rating}/5
-      Avis : "${reviewText}"
+      Tu es le gérant d'un établissement. Réponds à cet avis client.
 
-      ORDRES IMPÉRATIFS :
-      1. Adopte STRICTEMENT ce ton : "${userTone.toUpperCase()}".
-      2. Si le ton est "humoristique", tu DOIS faire une blague ou être décalé. Ne sois pas formel.
-      3. Si le ton est "amical", utilise le tutoiement si approprié.
-      4. Sois court (max 3 phrases).
+      INFOS AVIS :
+      - Client : ${authorName}
+      - Note : ${rating}/5
+      - Commentaire : "${reviewText}"
+
+      CONSIGNES DE STYLE :
+      - Ton imposé : ${userTone}
+      - Langue : Français
+      - Longueur : Court (2-3 phrases max).
+      - IMPORTANT : Ne commence JAMAIS ta réponse par le nom du ton. Commence directement la phrase.
+
+      ${userTone === 'humoristique' ? 'RÈGLE SPÉCIALE HUMOUR : Fais une blague, sois décalé, utilise des emojis drôles. Ne sois surtout pas corporatif.' : ''}
       
-      SIGNATURE OBLIGATOIRE :
-      Tu DOIS finir la réponse par : "${userSignature}"
-      (N'ajoute pas "Cordialement" ou autre avant la signature, mets juste la signature).
+      SIGNATURE :
+      Tu DOIS finir ta réponse uniquement par : "${userSignature}"
     `
 
     const completion = await openai.chat.completions.create({
       messages: [{ role: "user", content: prompt }],
       model: "gpt-3.5-turbo",
+      temperature: 0.9, // On augmente la créativité (0.7 -> 0.9) pour l'humour
     })
 
     const reply = completion.choices[0].message.content
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ reply })
 
   } catch (error: any) {
-    console.error("Erreur:", error)
-    return NextResponse.json({ error: "Erreur génération" }, { status: 500 })
+    console.error("Erreur API:", error)
+    return NextResponse.json({ error: "Erreur lors de la génération" }, { status: 500 })
   }
 }
