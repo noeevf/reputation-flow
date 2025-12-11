@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase"
 import { Loader2, Zap, RefreshCcw, Database } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
-// Le type exact de tes données dans Supabase
+// Le type des données qui viennent de Supabase
 type DBReview = {
   id: string
   author_name: string
@@ -57,7 +57,6 @@ export default function ReviewsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("Non connecté")
 
-      // Appel à l'API IA
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -72,7 +71,7 @@ export default function ReviewsPage() {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
 
-      // Sauvegarde en tant que BROUILLON ('draft')
+      // On sauvegarde en tant que BROUILLON
       const { error } = await supabase
         .from('reviews')
         .update({ status: 'draft', reply_text: data.reply })
@@ -80,7 +79,6 @@ export default function ReviewsPage() {
 
       if (error) throw error
 
-      // Mise à jour locale
       setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, status: 'draft', reply_text: data.reply } : r))
       
       toast({ title: "Brouillon prêt 📝", description: "Relisez et validez la réponse." })
@@ -95,7 +93,6 @@ export default function ReviewsPage() {
   // 3. PUBLICATION (VALIDATION FINALE)
   const handlePublishResponse = async (reviewId: string, finalText: string) => {
     try {
-      // On passe le statut en 'replied' (Publié)
       const { error } = await supabase
         .from('reviews')
         .update({ status: 'replied', reply_text: finalText })
@@ -107,7 +104,7 @@ export default function ReviewsPage() {
 
       toast({ 
         title: "Réponse publiée ! ✅", 
-        description: "Votre réponse a été envoyée." 
+        description: "Votre réponse a été enregistrée." 
       })
 
     } catch (error: any) {
@@ -115,7 +112,7 @@ export default function ReviewsPage() {
     }
   }
 
-  // --- FONCTIONS SECONDAIRES (Sync, Démo, Auth) ---
+  // --- FONCTIONS SECONDAIRES ---
   const syncWithGoogle = async () => {
     setIsSyncing(true)
     try {
@@ -166,7 +163,6 @@ export default function ReviewsPage() {
     setIsSyncing(false)
   }
 
-  // --- RENDER ---
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-10">
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -201,16 +197,18 @@ export default function ReviewsPage() {
           {reviews.map((review) => (
             <ReviewCard 
               key={review.id} 
+              // 👇 C'est cette partie qui corrige ton erreur
               review={{
                 id: review.id,
-                customerName: review.author_name, // Mapping correct
+                customerName: review.author_name,
                 rating: review.rating,
                 text: review.text,
                 date: new Date(review.date).toLocaleDateString(),
                 source: "Google",
-                status: review.status,       // ✅ INDISPENSABLE
-                reply_text: review.reply_text // ✅ INDISPENSABLE
+                status: review.status,
+                reply_text: review.reply_text
               }} 
+              // 👆 Fin de la correction
               onGenerateResponse={handleGenerateResponse}
               onPublishResponse={handlePublishResponse}
               isGenerating={generatingId === review.id}
