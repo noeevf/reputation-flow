@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { ReviewCard } from "@/components/dashboard/review-card"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
-import { Loader2, Zap } from "lucide-react"
+import { Loader2, Zap, RefreshCcw } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
 type DBReview = {
@@ -21,6 +21,7 @@ type DBReview = {
 export default function ReviewsPage() {
   const [reviews, setReviews] = useState<DBReview[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isSyncing, setIsSyncing] = useState(false)
   const { toast } = useToast()
 
   // Charger les avis depuis Supabase
@@ -43,35 +44,69 @@ export default function ReviewsPage() {
     fetchReviews()
   }, [])
 
-  // 🔥 LA FONCTION DE CONNEXION GOOGLE 🔥
+  // 🔥 FONCTION DE SYNCHRONISATION 🔥
+  const syncWithGoogle = async () => {
+    setIsSyncing(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session || !session.provider_token) {
+        toast({ title: "Connexion requise", description: "Veuillez cliquer sur 'Reconnecter Google'." })
+        await handleConnectGoogle()
+        return
+      }
+
+      const response = await fetch('/api/sync-google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          accessToken: session.provider_token,
+          userId: session.user.id 
+        })
+      })
+
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error)
+
+      toast({ 
+        title: "Succès !", 
+        description: `${result.count} avis synchronisés.` 
+      })
+      
+      fetchReviews() // Recharge la liste
+
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erreur Sync", description: error.message })
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
   const handleConnectGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // C'est ici qu'on demande la permission de gérer le Business Profile
         scopes: 'https://www.googleapis.com/auth/business.manage',
-        redirectTo: `${window.location.origin}/dashboard/reviews`, // Revenir ici après
+        redirectTo: `${window.location.origin}/dashboard/reviews`,
         queryParams: {
-          access_type: 'offline', // Important pour garder la connexion active
-          prompt: 'consent', // Force l'écran de validation pour être sûr d'avoir les droits
+          access_type: 'offline',
+          prompt: 'consent',
         },
       },
     })
-
-    if (error) {
-      toast({ variant: "destructive", title: "Erreur", description: error.message })
-    }
+    if (error) toast({ variant: "destructive", title: "Erreur", description: error.message })
   }
 
-  // Fonction IA (inchangée pour l'instant)
+  // Fonction IA (Maintenant elle est utilisée !)
   const handleGenerateResponse = async (reviewId: string) => {
     const review = reviews.find(r => r.id === reviewId)
     if (!review) return
 
     let aiResponse = ""
-    if (review.rating >= 4) aiResponse = `Merci ${review.author_name} ! ⭐`
-    else aiResponse = `Bonjour ${review.author_name}, désolé pour ce problème.`
+    if (review.rating >= 4) aiResponse = `Merci ${review.author_name} pour votre super note ! ⭐`
+    else aiResponse = `Bonjour ${review.author_name}, nous sommes navrés. Pouvez-vous nous contacter ?`
 
+    // Simulation de sauvegarde
     const { error } = await supabase
       .from('reviews')
       .update({ status: 'replied', reply_text: aiResponse })
@@ -79,6 +114,7 @@ export default function ReviewsPage() {
 
     if (!error) {
       setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, status: 'replied', reply_text: aiResponse } : r))
+      toast({ title: "Réponse générée", description: "La réponse a été ajoutée." })
     }
   }
 
@@ -92,14 +128,20 @@ export default function ReviewsPage() {
           </p>
         </div>
         
-        {/* LE BOUTON DE CONNEXION RÉEL */}
-        <Button 
-          onClick={handleConnectGoogle} 
-          className="gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200"
-        >
-            <Zap className="w-4 h-4 fill-current" />
-            Connecter Google Business
-        </Button>
+        <div className="flex gap-2">
+            <Button 
+            onClick={syncWithGoogle} 
+            disabled={isSyncing}
+            className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+                {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+                Synchroniser
+            </Button>
+            
+            <Button onClick={handleConnectGoogle} variant="outline" size="icon" title="Reconnecter Google">
+                <Zap className="w-4 h-4 text-blue-600" />
+            </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -109,12 +151,12 @@ export default function ReviewsPage() {
           <div className="bg-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border">
             <span className="text-2xl">📍</span>
           </div>
-          <h3 className="text-lg font-medium text-gray-900">Aucun avis connecté</h3>
+          <h3 className="text-lg font-medium text-gray-900">Aucun avis visible</h3>
           <p className="text-gray-500 mb-6 max-w-sm mx-auto mt-2">
-            Cliquez sur le bouton bleu en haut pour autoriser ReputationFlow à lire vos avis Google.
+            Si vous êtes connecté, cliquez sur "Synchroniser" pour récupérer vos avis.
           </p>
-          <Button onClick={handleConnectGoogle} variant="outline">
-            Lancer la connexion
+          <Button onClick={syncWithGoogle}>
+            Synchroniser maintenant
           </Button>
         </div>
       ) : (
@@ -127,12 +169,13 @@ export default function ReviewsPage() {
                 customerName: review.author_name,
                 rating: review.rating,
                 text: review.text,
-                date: review.date,
+                date: new Date(review.date).toLocaleDateString(),
                 source: "Google",
                 responded: review.status === 'replied',
                 response: review.reply_text
               }} 
-              onGenerateResponse={handleGenerateResponse}
+              // 👇 C'EST ICI QUE J'AVAIS OUBLIÉ DE METTRE LA FONCTION 👇
+              onGenerateResponse={handleGenerateResponse} 
             />
           ))}
         </div>
