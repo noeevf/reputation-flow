@@ -1,140 +1,89 @@
-"use client"
-
-import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Review } from "@/lib/types"
-import { Star, Loader2, CheckCircle2, Copy, Send } from "lucide-react"
+import { Star, Wand2, Loader2, Check } from "lucide-react"
 
 interface ReviewCardProps {
-  review: Review
-  onGenerateResponse: (reviewId: string) => Promise<void>
+  review: {
+    id: string
+    customerName: string
+    rating: number
+    text: string
+    date: string
+    source: "Google" | "Tripadvisor" | "Facebook"
+    responded: boolean
+    response?: string
+  }
+  onGenerateResponse: (id: string) => void
+  isGenerating?: boolean // Nouvelle option !
 }
 
-export function ReviewCard({ review, onGenerateResponse }: ReviewCardProps) {
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [generatedResponse, setGeneratedResponse] = useState<string | null>(
-    review.response || null
-  )
-  const [isCopied, setIsCopied] = useState(false)
-
-  // Mettre à jour la réponse quand la review change
-  useEffect(() => {
-    if (review.response) {
-      setGeneratedResponse(review.response)
-    }
-  }, [review.response])
-
-  const handleGenerate = async () => {
-    setIsGenerating(true)
-    try {
-      await onGenerateResponse(review.id)
-    } catch (error) {
-      console.error("Erreur lors de la génération:", error)
-    } finally {
-      setIsGenerating(false)
-    }
-  }
-
-  const handleCopy = () => {
-    const textToCopy = review.response || generatedResponse
-    if (textToCopy) {
-      navigator.clipboard.writeText(textToCopy)
-      setIsCopied(true)
-      setTimeout(() => setIsCopied(false), 2000) // Remet l'état normal après 2s
-    }
-  }
-
-  const stars = Array.from({ length: 5 }, (_, i) => (
-    <Star
-      key={i}
-      className={`h-5 w-5 ${
-        i < review.rating
-          ? "fill-yellow-400 text-yellow-400"
-          : "fill-gray-200 text-gray-200"
-      }`}
-    />
-  ))
-
-  const getRatingColor = () => {
-    if (review.rating >= 4) return "text-green-600"
-    if (review.rating >= 3) return "text-yellow-600"
-    return "text-red-600"
-  }
-
+export function ReviewCard({ review, onGenerateResponse, isGenerating = false }: ReviewCardProps) {
   return (
-    <Card className="hover:shadow-md transition-shadow bg-white">
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <h3 className="font-semibold text-gray-900">{review.customerName}</h3>
-              <span className={`text-sm font-medium ${getRatingColor()}`}>
-                {review.rating}/5
-              </span>
-            </div>
-            <div className="flex items-center gap-1 mb-2">{stars}</div>
-            <p className="text-sm text-gray-500">{review.date}</p>
+    <Card className="overflow-hidden transition-all hover:shadow-md">
+      <CardHeader className="flex flex-row items-start justify-between bg-gray-50/50 p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 font-bold uppercase">
+            {review.customerName.charAt(0)}
           </div>
-          {review.responded && (
-            <div className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full text-xs font-medium">
-                <CheckCircle2 className="h-3 w-3" />
-                Répondu
+          <div>
+            <h3 className="font-semibold text-gray-900">{review.customerName}</h3>
+            <div className="flex items-center gap-1 text-xs text-gray-500">
+              <span>{review.source}</span>
+              <span>•</span>
+              <span>{review.date}</span>
             </div>
-          )}
+          </div>
+        </div>
+        <div className="flex text-yellow-500">
+          {[...Array(5)].map((_, i) => (
+            <Star
+              key={i}
+              className={`h-4 w-4 ${i < review.rating ? "fill-current" : "text-gray-300"}`}
+            />
+          ))}
         </div>
       </CardHeader>
       
-      <CardContent className="space-y-4">
-        <p className="text-gray-700 leading-relaxed text-sm">{review.text}</p>
-        
-        {/* Zone de la réponse générée */}
-        {(review.response || generatedResponse) && (
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 animate-in fade-in zoom-in duration-300">
-            <div className="flex justify-between items-center mb-2">
-                <p className="text-xs font-bold text-indigo-600 uppercase tracking-wide">Réponse suggérée par l'IA</p>
-            </div>
-            <p className="text-gray-800 text-sm whitespace-pre-wrap mb-4">{review.response || generatedResponse}</p>
-            
-            {/* Boutons d'action */}
-            <div className="flex justify-end gap-2 pt-2 border-t border-indigo-100">
-                <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={handleCopy}
-                    className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-100 h-8"
-                >
-                    {isCopied ? <CheckCircle2 className="w-3.5 h-3.5 mr-2" /> : <Copy className="w-3.5 h-3.5 mr-2" />}
-                    {isCopied ? "Copié !" : "Copier"}
-                </Button>
-                <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 h-8 gap-2">
-                    <Send className="w-3.5 h-3.5" />
-                    Publier
-                </Button>
-            </div>
-          </div>
-        )}
+      <CardContent className="p-4 space-y-4">
+        <p className="text-sm text-gray-700 leading-relaxed">
+          {review.text || <span className="italic text-gray-400">Pas de commentaire écrit.</span>}
+        </p>
 
-        {/* Bouton de génération (caché si déjà répondu ou généré) */}
-        {!review.responded && !generatedResponse && (
-          <Button
-            onClick={handleGenerate}
-            disabled={isGenerating}
-            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-sm"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                L'IA rédige votre réponse...
-              </>
-            ) : (
-              <>
-                <Star className="mr-2 h-4 w-4 fill-white" />
-                Générer une réponse avec l'IA
-              </>
-            )}
-          </Button>
-        )}
+        {/* ZONE RÉPONSE */}
+        <div className="pt-2">
+          {review.responded && review.response ? (
+            <div className="rounded-md bg-green-50 border border-green-100 p-3 animate-in fade-in">
+              <div className="flex items-center gap-2 mb-1">
+                 <Check className="h-3 w-3 text-green-600" />
+                 <span className="text-xs font-bold text-green-700 uppercase tracking-wider">Réponse publiée</span>
+              </div>
+              <p className="text-sm text-gray-700 italic">
+                "{review.response}"
+              </p>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <Button 
+                size="sm" 
+                onClick={() => onGenerateResponse(review.id)}
+                disabled={isGenerating} // On désactive le bouton si ça charge
+                className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Rédaction IA en cours...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="mr-2 h-4 w-4" />
+                    Générer une réponse IA
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   )

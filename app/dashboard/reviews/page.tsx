@@ -22,9 +22,11 @@ export default function ReviewsPage() {
   const [reviews, setReviews] = useState<DBReview[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
+  // On ajoute un état pour savoir quel avis est en train d'être généré (pour afficher le petit rond qui tourne)
+  const [generatingId, setGeneratingId] = useState<string | null>(null)
+  
   const { toast } = useToast()
 
-  // Charger les avis au démarrage
   const fetchReviews = async () => {
     setIsLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -44,7 +46,7 @@ export default function ReviewsPage() {
     fetchReviews()
   }, [])
 
-  // --- OPTION 1 : VRAIE SYNCHRO GOOGLE (Pour plus tard) ---
+  // --- OPTION 1 : SYNCHRO GOOGLE ---
   const syncWithGoogle = async () => {
     setIsSyncing(true)
     try {
@@ -72,7 +74,7 @@ export default function ReviewsPage() {
       fetchReviews()
 
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Info", description: "Aucune fiche Google trouvée. Utilisez le mode démo (bouton orange)." })
+      toast({ variant: "destructive", title: "Info", description: "Utilisez le mode démo si vous n'avez pas de fiche Google." })
     } finally {
       setIsSyncing(false)
     }
@@ -90,20 +92,19 @@ export default function ReviewsPage() {
     if (error) toast({ variant: "destructive", title: "Erreur", description: error.message })
   }
 
-  // --- OPTION 2 : SIMULATION (Le bouton Orange) ---
+  // --- OPTION 2 : SIMULATION ---
   const simulateData = async () => {
     setIsSyncing(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // On crée 4 faux avis réalistes
     const fakeReviews = [
       {
         user_id: user.id,
         google_review_id: `fake-${Date.now()}-1`,
-        author_name: "Thomas Durand",
+        author_name: "Julie Martin",
         rating: 5,
-        text: "Service impeccable ! L'équipe est très réactive. Je recommande vivement.",
+        text: "Incroyable ! J'ai adoré le service, c'était rapide et efficace. Je reviendrai !",
         date: new Date().toISOString(),
         source: "Google",
         status: "pending"
@@ -111,30 +112,10 @@ export default function ReviewsPage() {
       {
         user_id: user.id,
         google_review_id: `fake-${Date.now()}-2`,
-        author_name: "Sarah Croche",
-        rating: 4,
-        text: "Très bien, mais un peu d'attente au téléphone.",
-        date: new Date(Date.now() - 86400000).toISOString(), // Hier
-        source: "Google",
-        status: "pending"
-      },
-      {
-        user_id: user.id,
-        google_review_id: `fake-${Date.now()}-3`,
-        author_name: "Jean Bon",
+        author_name: "Pierre Durand",
         rating: 2,
-        text: "Pas terrible. Le produit ne correspond pas à la photo.",
-        date: new Date(Date.now() - 172800000).toISOString(), // Avant-hier
-        source: "Google",
-        status: "pending"
-      },
-       {
-        user_id: user.id,
-        google_review_id: `fake-${Date.now()}-4`,
-        author_name: "Marie Curie",
-        rating: 5,
-        text: "Une expérience radioactivement géniale !",
-        date: new Date(Date.now() - 250000000).toISOString(), 
+        text: "Assez déçu. L'accueil était froid et j'ai attendu 20 minutes.",
+        date: new Date(Date.now() - 86400000).toISOString(),
         source: "Google",
         status: "pending"
       }
@@ -143,29 +124,57 @@ export default function ReviewsPage() {
     const { error } = await supabase.from('reviews').upsert(fakeReviews, { onConflict: 'google_review_id' })
 
     if (!error) {
-      toast({ title: "Mode Démo", description: "4 avis de test ajoutés !" })
+      toast({ title: "Mode Démo", description: "Nouveaux avis ajoutés !" })
       fetchReviews()
     }
     setIsSyncing(false)
   }
 
-  // Fonction IA (Branchée au bouton IA)
+  // 🔥 L'INTELLIGENCE ARTIFICIELLE EST ICI 🔥
   const handleGenerateResponse = async (reviewId: string) => {
-    const review = reviews.find(r => r.id === reviewId)
-    if (!review) return
+    // 1. On active le chargement pour cet avis précis
+    setGeneratingId(reviewId)
+    
+    try {
+      const review = reviews.find(r => r.id === reviewId)
+      if (!review) return
 
-    let aiResponse = ""
-    if (review.rating >= 4) aiResponse = `Bonjour ${review.author_name}, merci infiniment pour ce super retour ! ⭐`
-    else aiResponse = `Bonjour ${review.author_name}, nous sommes désolés de lire cela. Contactez-nous en privé.`
+      // 2. On appelle notre API (le cerveau)
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reviewText: review.text,
+          rating: review.rating,
+          authorName: review.author_name,
+        }),
+      })
 
-    const { error } = await supabase
-      .from('reviews')
-      .update({ status: 'replied', reply_text: aiResponse })
-      .eq('id', reviewId)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error)
 
-    if (!error) {
-      setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, status: 'replied', reply_text: aiResponse } : r))
-      toast({ title: "Réponse générée", description: "La réponse a été ajoutée." })
+      const aiReply = data.reply
+
+      // 3. On sauvegarde la réponse de l'IA dans Supabase
+      const { error } = await supabase
+        .from('reviews')
+        .update({ status: 'replied', reply_text: aiReply })
+        .eq('id', reviewId)
+
+      if (error) throw error
+
+      // 4. On met à jour l'affichage instantanément
+      setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, status: 'replied', reply_text: aiReply } : r))
+      
+      toast({ 
+        title: "Réponse générée ! ✨", 
+        description: "L'IA a rédigé une réponse pour vous." 
+      })
+
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erreur IA", description: error.message })
+    } finally {
+      setGeneratingId(null) // On arrête le chargement
     }
   }
 
@@ -175,12 +184,11 @@ export default function ReviewsPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-gray-900">Vos Avis Google</h2>
           <p className="text-gray-500">
-            Gérez vos avis (Mode Démo activé).
+            Gérez votre e-réputation avec l'IA.
           </p>
         </div>
         
         <div className="flex flex-wrap gap-2 justify-center">
-            {/* BOUTON DÉMO (ORANGE) */}
             <Button 
               onClick={simulateData} 
               variant="outline"
@@ -188,10 +196,9 @@ export default function ReviewsPage() {
               className="gap-2 border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
             >
                 <Database className="w-4 h-4" />
-                Générer Faux Avis
+                Mode Démo
             </Button>
 
-            {/* BOUTON RÉEL (BLEU) */}
             <Button 
             onClick={syncWithGoogle} 
             disabled={isSyncing}
@@ -212,14 +219,14 @@ export default function ReviewsPage() {
       ) : reviews.length === 0 ? (
         <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
           <div className="bg-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border">
-            <span className="text-2xl">🧪</span>
+            <span className="text-2xl">🤖</span>
           </div>
-          <h3 className="text-lg font-medium text-gray-900">Aucun avis</h3>
+          <h3 className="text-lg font-medium text-gray-900">Prêt à tester l'IA ?</h3>
           <p className="text-gray-500 mb-6 max-w-sm mx-auto mt-2">
-            Utilisez le bouton orange "Générer Faux Avis" pour tester l'application.
+            Cliquez sur "Mode Démo" pour créer des avis, puis testez le bouton "Générer une réponse".
           </p>
           <Button onClick={simulateData} variant="outline" className="text-orange-600 border-orange-200">
-            Ajouter des données de test
+            Lancer la démo
           </Button>
         </div>
       ) : (
@@ -237,7 +244,8 @@ export default function ReviewsPage() {
                 responded: review.status === 'replied',
                 response: review.reply_text
               }} 
-              onGenerateResponse={handleGenerateResponse} 
+              onGenerateResponse={handleGenerateResponse}
+              isGenerating={generatingId === review.id} // On passe l'info si ça charge
             />
           ))}
         </div>
